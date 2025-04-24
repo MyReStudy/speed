@@ -1,10 +1,12 @@
 import math
+import random
+import time
 
 import numpy as np
 import torch
 
 
-def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, aisle_vertex_info):
+def ACO_solver(required_idx, distance_matrix_orig):
     '''
     Args:
         coords:必须访问点的坐标
@@ -13,49 +15,18 @@ def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, ai
     Returns:
     '''
 
-    def get_dist(idx1, idx2, required_coords, steiner_coords, where_is_vertex, aisle_vertex_info):
-        coord1 = required_coords[idx1]
-        coord2 = required_coords[idx2]
-        steiner_len = len(steiner_coords)
-        if coord1[0] == coord2[0]:  # 如果横坐标一样
-            return abs(coord1[1] - coord2[1])  # 距离等于纵坐标相减
-        aisle1 = where_is_vertex[idx1+steiner_len]  # 得到第一个点所在的巷道
-        aisle2 = where_is_vertex[idx2+steiner_len]  # 得到第二个点所在的巷道
-        s11 = aisle_vertex_info[aisle1][0]  # 巷道1的上Steiner点
-        s12 = aisle_vertex_info[aisle1][-1]  # 巷道1的下Steiner点
-        s21 = aisle_vertex_info[aisle2][0]
-        s22 = aisle_vertex_info[aisle2][-1]
-        coord_s11 = steiner_coords[s11]  # 巷道1上坐标
-        coord_s12 = steiner_coords[s12]
-        coord_s21 = steiner_coords[s21]
-        coord_s22 = steiner_coords[s22]
-        d1 = ((abs(coord1[0] - coord_s11[0]) + abs(coord1[1] - coord_s11[1]) +
-               abs(coord_s21[0] - coord_s11[0]) + abs(coord_s21[1] - coord_s11[1])) +
-              abs(coord_s21[0] - coord2[0]) + abs(coord_s21[1] - coord2[1]))
-        d2 = ((abs(coord1[0] - coord_s11[0]) + abs(coord1[1] - coord_s11[1]) +
-               abs(coord_s22[0] - coord_s11[0]) + abs(coord_s22[1] - coord_s11[1])) +
-              abs(coord_s22[0] - coord2[0]) + abs(coord_s22[1] - coord2[1]))
-        d3 = ((abs(coord1[0] - coord_s12[0]) + abs(coord1[1] - coord_s12[1]) +
-               abs(coord_s22[0] - coord_s12[0]) + abs(coord_s22[1] - coord_s12[1])) +
-              abs(coord_s22[0] - coord2[0]) + abs(coord_s22[1] - coord2[1]))
-        d4 = ((abs(coord1[0] - coord_s12[0]) + abs(coord1[1] - coord_s12[1]) +
-               abs(coord_s21[0] - coord_s12[0]) + abs(coord_s21[1] - coord_s12[1])) +
-              abs(coord_s21[0] - coord2[0]) + abs(coord_s21[1] - coord2[1]))
-        return min(d1, d2, d3, d4)
-
     # 生成距离矩阵
-    city_count = len(required_coords)
-
+    city_count = len(required_idx)
     dist_matrix = np.zeros((city_count, city_count))
 
     for i in range(city_count):
         for j in range(i + 1, city_count):
-            dist_matrix[i, j] = get_dist(i, j, required_coords, steiner_coords, where_is_vertex, aisle_vertex_info)
+            dist_matrix[i, j] = distance_matrix_orig[required_idx[i]][required_idx[j]]
             dist_matrix[j, i] = dist_matrix[i, j]  # 距离矩阵对称
         dist_matrix[i,i] = float('inf')
 
     # print(dist_matrix)
-
+    time_aco_1 = time.time()
     '''
     文献
     r=0.9, alpha=1, beta=5, tao=0.1, Q=2, m=5
@@ -72,7 +43,7 @@ def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, ai
     MAX_iter = 20000  # 最大迭代值
     Q = 2
     tao = 0.1
-    # 初始信息素矩阵，全是为1组成的矩阵
+    # 初始信息素矩阵，全是为0.1组成的矩阵
     pheromonetable = np.full((city_count, city_count), tao)
     # 候选集列表,存放所有蚂蚁的路径(一只蚂蚁一个路径)
     candidate = np.zeros((AntCount, city_count)).astype(int)
@@ -85,7 +56,7 @@ def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, ai
     no_change_count=0
     previous_best_distance = float('inf')
 
-    while iter < MAX_iter and no_change_count < 10:
+    while iter < MAX_iter and no_change_count < 20:
         # first：蚂蚁初始点选择
         if AntCount <= city_count:
             # np.random.permutation随机排列一个数组的
@@ -100,7 +71,7 @@ def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, ai
                 n = n + 1
             candidate[city_count * (n - 1):AntCount, 0] = np.random.permutation(range(city_count))[:m]
         length = np.zeros(AntCount)  # 每次迭代的N个蚂蚁的距离值
-
+        np.set_printoptions(suppress=True, precision=8)
         # second：选择下一个城市选择
         for i in range(AntCount):
             # 移除已经访问的第一个元素
@@ -113,12 +84,21 @@ def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, ai
                     protrans[k] = np.power(pheromonetable[visit][unvisit[k]], alpha) * np.power(
                         etable[visit][unvisit[k]], beta)
                 # 累计概率，轮盘赌选择
-                cumsumprobtrans = (protrans / sum(protrans)).cumsum()
-                cumsumprobtrans -= np.random.rand()
+                # 归一化转移概率
+                protrans_normalized = protrans / np.sum(protrans)
+                # 生成一个0到1之间的随机数
+                r = np.random.rand()
+                # 计算累积概率，并使用 searchsorted 找到随机数 r 所在的区间
+                cumulative_probs = np.cumsum(protrans_normalized)
+                selected_prob_index = np.searchsorted(cumulative_probs, r)
+                k = unvisit[selected_prob_index]  # 直接返回对应的城市索引
+                # cumsumprobtrans = (protrans / sum(protrans)).cumsum()
+
+                # cumsumprobtrans -= np.random.rand()
                 # 求出离随机数产生最近的索引值
-                k = unvisit[list(cumsumprobtrans > 0).index(True)]
+                # k = next_city
                 # 下一个访问城市的索引值
-                candidate[i, j] = k
+                candidate[i, j] = k  # i是蚂蚁 j是第几号访问的城市
                 unvisit.remove(k)
                 length[i] += dist_matrix[visit][k]
                 visit = k
@@ -158,9 +138,14 @@ def ACO_solver(required_coords, steiner_coords, steiner_len, where_is_vertex, ai
                 changepheromonetable[candidate[i, j]][candidate[i][j + 1]] += Q / length[i]
                 #Distance[candidate[i, j]][candidate[i, j + 1]]
             #最后一个城市和第一个城市的信息素增加量
+
             changepheromonetable[candidate[i, j + 1]][candidate[i, 0]] += Q / length[i]
+
+
         #信息素更新的公式：
         pheromonetable = (1 - rho) * pheromonetable + changepheromonetable
         iter += 1
     distance_best = [x for x in distance_best if x != 0]
-    return distance_best[-1]
+    time_aco_2 = time.time()
+    time_aco_tmp = time_aco_2-time_aco_1
+    return distance_best[-1],time_aco_tmp

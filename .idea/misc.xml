@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="DL_for_picking" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="DL_for_picking" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.11 (attention_tsp)" project-jdk-type="Python SDK" />
 </project>
